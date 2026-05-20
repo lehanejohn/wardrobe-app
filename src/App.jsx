@@ -261,7 +261,7 @@ function AddSheet({ onClose, onSave }) {
         const res = await fetch("/api/analyse", {
   method:"POST", headers:{ "Content-Type":"application/json" },
   body: JSON.stringify({
-    model:"claude-sonnet-4-20250514", max_tokens:300,
+    model:"claude-sonnet-4-5", max_tokens:300,
     messages:[{ role:"user", content:[
       { type:"image", source:{ type:"base64", media_type:"image/jpeg", data:b64 } },
       { type:"text",  text:`Analyse this clothing photo. Return ONLY a JSON object with: type (one of: ${CLOTHING_TYPES.join(", ")}), colour (simple colour name), make (brand if visible else empty string), suggestedSize (if readable else empty string). No markdown, no explanation, just JSON.` }
