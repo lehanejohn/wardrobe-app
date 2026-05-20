@@ -431,7 +431,7 @@ function ItemCard({ item, onClick }) {
     }}>
       <div style={{ height:150, background:"#f4ede0", display:"flex", alignItems:"center", justifyContent:"center", position:"relative", overflow:"hidden" }}>
         {item.imageUrl
-          ? <img src={item.imageUrl} alt={item.type} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+          ? <img src={item.imageUrl} alt={item.type} style={{ width:"100%", height:"100%", objectFit:"contain" }} />
           : <span style={{ fontSize:44 }}>{TYPE_EMOJI[item.type]||"👕"}</span>
         }
         <div style={{ position:"absolute", bottom:8, left:8 }}>
