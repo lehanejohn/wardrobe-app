@@ -1,4 +1,12 @@
 import { useState, useRef, useEffect } from "react";
+import { createClient } from "@supabase/supabase-js";
+
+// ─── Supabase ─────────────────────────────────────────────────────────────────
+
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -41,36 +49,66 @@ const TYPE_EMOJI = {
   "Swimwear":"🩱","Underwear":"🩲","Socks":"🧦","Other":"👕"
 };
 
-const SAMPLE = [
-  { id:1, imageUrl:null, member:"Ella",  type:"Dress",    colour:"Yellow", make:"Zara Kids",        size:"Age 5-6", decision:"keep",     note:"Summer favourite" },
-  { id:2, imageUrl:null, member:"Jake",  type:"Jumper",   colour:"Navy",   make:"H&M",              size:"Age 7-8", decision:"seasonal", note:"" },
-  { id:3, imageUrl:null, member:"Mum",   type:"Jacket",   colour:"Olive",  make:"Whistles",         size:"S",       decision:"keep",     note:"" },
-  { id:4, imageUrl:null, member:"Jake",  type:"Trainers", colour:"White",  make:"Nike",             size:"Age 6-7", decision:"charity",  note:"Still good condition" },
-  { id:5, imageUrl:null, member:"Ella",  type:"Jeans",    colour:"Blue",   make:"Gap Kids",         size:"Age 6-7", decision:"vinted",   note:"" },
-  { id:6, imageUrl:null, member:"Dad",   type:"Shirt",    colour:"White",  make:"Charles Tyrwhitt", size:"M",       decision:"keep",     note:"" },
-];
+// ─── Supabase helpers ─────────────────────────────────────────────────────────
 
-const STORAGE_KEY = "wardrobe-items-v1";
-
-// ─── Storage helpers ──────────────────────────────────────────────────────────
-
-async function loadItems() {
-  try {
-    const result = await window.storage.get(STORAGE_KEY);
-    if (result && result.value) {
-      const parsed = JSON.parse(result.value);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch (_) {}
-  return SAMPLE;
+async function fetchItems() {
+  const { data, error } = await supabase
+    .from("items")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) { console.error("Fetch error:", error); return []; }
+  return data.map(row => ({
+    id:       row.id,
+    member:   row.member,
+    type:     row.type,
+    colour:   row.colour,
+    make:     row.make,
+    size:     row.size,
+    decision: row.decision,
+    note:     row.note,
+    imageUrl: row.image_url,
+  }));
 }
 
-async function saveItems(items) {
-  try {
-    // Strip blob URLs before saving — they don't survive sessions
-    const sanitised = items.map(i => ({ ...i, imageUrl: i.imageUrl?.startsWith("blob:") ? null : i.imageUrl }));
-    await window.storage.set(STORAGE_KEY, JSON.stringify(sanitised));
-  } catch (_) {}
+async function insertItem(item) {
+  const { data, error } = await supabase
+    .from("items")
+    .insert([{
+      member:    item.member,
+      type:      item.type,
+      colour:    item.colour,
+      make:      item.make,
+      size:      item.size,
+      decision:  item.decision,
+      note:      item.note,
+      image_url: item.imageUrl?.startsWith("blob:") ? null : item.imageUrl,
+    }])
+    .select()
+    .single();
+  if (error) { console.error("Insert error:", error); return null; }
+  return { ...item, id: data.id };
+}
+
+async function updateItem(item) {
+  const { error } = await supabase
+    .from("items")
+    .update({
+      member:    item.member,
+      type:      item.type,
+      colour:    item.colour,
+      make:      item.make,
+      size:      item.size,
+      decision:  item.decision,
+      note:      item.note,
+      image_url: item.imageUrl?.startsWith("blob:") ? null : item.imageUrl,
+    })
+    .eq("id", item.id);
+  if (error) console.error("Update error:", error);
+}
+
+async function deleteItem(id) {
+  const { error } = await supabase.from("items").delete().eq("id", id);
+  if (error) console.error("Delete error:", error);
 }
 
 // ─── Shared components ────────────────────────────────────────────────────────
@@ -138,15 +176,14 @@ function Sheet({ onClose, children, title }) {
   );
 }
 
-// ─── Tag form (shared between Add and Edit) ───────────────────────────────────
+// ─── Tag form ─────────────────────────────────────────────────────────────────
 
-function TagForm({ tags, setTags, imageUrl, loading, onSave, saveLabel, extraTop }) {
-  const canSave = tags.type.length > 0;
+function TagForm({ tags, setTags, imageUrl, loading, onSave, saveLabel, saving, extraTop }) {
+  const canSave = tags.type.length > 0 && !saving;
   return (
     <div>
       {extraTop}
 
-      {/* Image preview */}
       {imageUrl && (
         <div style={{ borderRadius:16, overflow:"hidden", marginBottom:20, height:200, position:"relative" }}>
           <img src={imageUrl} alt="Upload" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
@@ -164,7 +201,6 @@ function TagForm({ tags, setTags, imageUrl, loading, onSave, saveLabel, extraTop
         </div>
       )}
 
-      {/* Member */}
       <div style={{ marginBottom:18 }}>
         <Label>Belongs to</Label>
         <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
@@ -174,7 +210,6 @@ function TagForm({ tags, setTags, imageUrl, loading, onSave, saveLabel, extraTop
         </div>
       </div>
 
-      {/* Type */}
       <div style={{ marginBottom:18 }}>
         <Label>Type of clothing</Label>
         <select value={tags.type} onChange={e => setTags(t=>({...t,type:e.target.value}))} style={inputStyle}>
@@ -183,7 +218,6 @@ function TagForm({ tags, setTags, imageUrl, loading, onSave, saveLabel, extraTop
         </select>
       </div>
 
-      {/* Colour + Make */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:18 }}>
         <div>
           <Label>Colour</Label>
@@ -195,7 +229,6 @@ function TagForm({ tags, setTags, imageUrl, loading, onSave, saveLabel, extraTop
         </div>
       </div>
 
-      {/* Size */}
       <div style={{ marginBottom:18 }}>
         <Label>Size</Label>
         <select value={tags.size} onChange={e => setTags(t=>({...t,size:e.target.value}))} style={inputStyle}>
@@ -204,7 +237,6 @@ function TagForm({ tags, setTags, imageUrl, loading, onSave, saveLabel, extraTop
         </select>
       </div>
 
-      {/* Decision */}
       <div style={{ marginBottom:18 }}>
         <Label>Decision</Label>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
@@ -221,7 +253,6 @@ function TagForm({ tags, setTags, imageUrl, loading, onSave, saveLabel, extraTop
         </div>
       </div>
 
-      {/* Note */}
       <div style={{ marginBottom:24 }}>
         <Label>Note (optional)</Label>
         <input value={tags.note} onChange={e => setTags(t=>({...t,note:e.target.value}))} placeholder="Any extra details…" style={inputStyle} />
@@ -234,7 +265,9 @@ function TagForm({ tags, setTags, imageUrl, loading, onSave, saveLabel, extraTop
         background: canSave ? "#2a1a0a" : "#d4c9b0",
         color: canSave ? "#fffdf8" : "#a09080",
         transition:"background 0.2s"
-      }}>{saveLabel}</button>
+      }}>
+        {saving ? "Saving…" : saveLabel}
+      </button>
 
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
@@ -247,6 +280,7 @@ function AddSheet({ onClose, onSave }) {
   const [step, setStep]         = useState("pick");
   const [imageUrl, setImageUrl] = useState(null);
   const [loading, setLoading]   = useState(false);
+  const [saving, setSaving]     = useState(false);
   const [tags, setTags]         = useState({ member:"Mum", type:"", colour:"", make:"", size:"", decision:"undecided", note:"" });
 
   const processFile = (file) => {
@@ -259,15 +293,15 @@ function AddSheet({ onClose, onSave }) {
       setLoading(true);
       try {
         const res = await fetch("/api/analyse", {
-  method:"POST", headers:{ "Content-Type":"application/json" },
-  body: JSON.stringify({
-    model:"claude-sonnet-4-5", max_tokens:300,
-    messages:[{ role:"user", content:[
-      { type:"image", source:{ type:"base64", media_type:"image/jpeg", data:b64 } },
-      { type:"text",  text:`Analyse this clothing photo. Return ONLY a JSON object with: type (one of: ${CLOTHING_TYPES.join(", ")}), colour (simple colour name), make (brand if visible else empty string), suggestedSize (if readable else empty string). No markdown, no explanation, just JSON.` }
-    ]}]
-  })
-});
+          method:"POST", headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({
+            model:"claude-sonnet-4-5", max_tokens:300,
+            messages:[{ role:"user", content:[
+              { type:"image", source:{ type:"base64", media_type:"image/jpeg", data:b64 } },
+              { type:"text",  text:`Analyse this clothing photo. Return ONLY a JSON object with: type (one of: ${CLOTHING_TYPES.join(", ")}), colour (simple colour name), make (brand if visible else empty string), suggestedSize (if readable else empty string). No markdown, no explanation, just JSON.` }
+            ]}]
+          })
+        });
         const data = await res.json();
         const text = data.content?.map(b=>b.text||"").join("") || "";
         const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
@@ -276,6 +310,14 @@ function AddSheet({ onClose, onSave }) {
       setLoading(false);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    const saved = await insertItem({ imageUrl, ...tags });
+    if (saved) onSave(saved);
+    setSaving(false);
+    onClose();
   };
 
   return (
@@ -309,9 +351,9 @@ function AddSheet({ onClose, onSave }) {
       {step === "tagging" && (
         <TagForm
           tags={tags} setTags={setTags}
-          imageUrl={imageUrl} loading={loading}
+          imageUrl={imageUrl} loading={loading} saving={saving}
           saveLabel="Save to Wardrobe"
-          onSave={() => { onSave({ imageUrl, ...tags, id:Date.now() }); onClose(); }}
+          onSave={handleSave}
         />
       )}
     </Sheet>
@@ -321,18 +363,34 @@ function AddSheet({ onClose, onSave }) {
 // ─── Edit Sheet ───────────────────────────────────────────────────────────────
 
 function EditSheet({ item, onClose, onUpdate, onDelete }) {
-  const [tags, setTags] = useState({ ...item });
+  const [tags, setTags]     = useState({ ...item });
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    const updated = { ...item, ...tags };
+    await updateItem(updated);
+    onUpdate(updated);
+    setSaving(false);
+    onClose();
+  };
+
+  const handleDelete = async () => {
+    await deleteItem(item.id);
+    onDelete(item.id);
+    onClose();
+  };
 
   return (
     <Sheet onClose={onClose} title="Edit Item">
       <TagForm
         tags={tags} setTags={setTags}
-        imageUrl={item.imageUrl} loading={false}
+        imageUrl={item.imageUrl} loading={false} saving={saving}
         saveLabel="Save Changes"
-        onSave={() => { onUpdate({...item,...tags}); onClose(); }}
+        onSave={handleSave}
         extraTop={
           <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:12 }}>
-            <button onClick={() => { onDelete(item.id); onClose(); }} style={{
+            <button onClick={handleDelete} style={{
               border:"none", borderRadius:10, padding:"8px 16px",
               background:"#fce8e8", color:"#c04040",
               fontFamily:"inherit", fontSize:13, fontWeight:700, cursor:"pointer"
@@ -386,12 +444,7 @@ function SearchBar({ value, onChange }) {
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder="Search by type, colour, brand, size…"
-        style={{
-          ...inputStyle,
-          paddingLeft:40, fontSize:14,
-          background:"#fffdf8", border:"1.5px solid #e5ddd0",
-          borderRadius:14
-        }}
+        style={{ ...inputStyle, paddingLeft:40, fontSize:14, background:"#fffdf8", border:"1.5px solid #e5ddd0", borderRadius:14 }}
       />
       {value && (
         <button onClick={() => onChange("")} style={{
@@ -406,29 +459,22 @@ function SearchBar({ value, onChange }) {
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [items, setItems]           = useState([]);
-  const [ready, setReady]           = useState(false);
-  const [showAdd, setShowAdd]       = useState(false);
-  const [editItem, setEditItem]     = useState(null);
-  const [filterMember, setFilter]   = useState("All");
-  const [filterDecision, setFilterD]= useState("All");
-  const [search, setSearch]         = useState("");
+  const [items, setItems]            = useState([]);
+  const [ready, setReady]            = useState(false);
+  const [showAdd, setShowAdd]        = useState(false);
+  const [editItem, setEditItem]      = useState(null);
+  const [filterMember, setFilter]    = useState("All");
+  const [filterDecision, setFilterD] = useState("All");
+  const [search, setSearch]          = useState("");
 
-  // Load from storage on mount
   useEffect(() => {
-    loadItems().then(loaded => { setItems(loaded); setReady(true); });
+    fetchItems().then(loaded => { setItems(loaded); setReady(true); });
   }, []);
 
-  // Persist whenever items change (after initial load)
-  useEffect(() => {
-    if (ready) saveItems(items);
-  }, [items, ready]);
+  const handleAdd    = item    => setItems(prev => [item, ...prev]);
+  const handleUpdate = updated => setItems(prev => prev.map(i => i.id===updated.id ? updated : i));
+  const handleDelete = id      => setItems(prev => prev.filter(i => i.id!==id));
 
-  const addItem    = item    => setItems(prev => [item, ...prev]);
-  const updateItem = updated => setItems(prev => prev.map(i => i.id===updated.id ? updated : i));
-  const deleteItem = id      => setItems(prev => prev.filter(i => i.id!==id));
-
-  // Search matches type, colour, make, size, note, member
   const matchesSearch = (item) => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
@@ -462,14 +508,14 @@ export default function App() {
     <div style={{ minHeight:"100vh", background:"#faf5ec", fontFamily:"'DM Sans','Helvetica Neue',sans-serif", paddingBottom:110 }}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet" />
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div style={{ background:"#2a1a0a", padding:"16px 20px 14px", position:"sticky", top:0, zIndex:50 }}>
         <div style={{ fontFamily:"'Playfair Display',Georgia,serif", fontSize:26, color:"#fffdf8", fontWeight:800, letterSpacing:"-0.02em" }}>
           Wardrobe <span style={{ fontSize:14, fontWeight:400, color:"#8a7860", letterSpacing:"0.1em", textTransform:"uppercase" }}>Family</span>
         </div>
       </div>
 
-      {/* ── Stats ── */}
+      {/* Stats */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, padding:"16px 16px 0" }}>
         {[
           { label:"Total",     value:stats.total,     color:"#2a1a0a" },
@@ -483,10 +529,10 @@ export default function App() {
         ))}
       </div>
 
-      {/* ── Search ── */}
+      {/* Search */}
       <SearchBar value={search} onChange={setSearch} />
 
-      {/* ── Member filter ── */}
+      {/* Member filter */}
       <div style={{ display:"flex", gap:8, padding:"12px 16px 0", overflowX:"auto", scrollbarWidth:"none" }}>
         {["All", ...FAMILY_MEMBERS].map(m => {
           const ms = MEMBER_STYLE[m] || { bg:"#f0e8dc", color:"#2a1a0a" };
@@ -503,7 +549,7 @@ export default function App() {
         })}
       </div>
 
-      {/* ── Decision filter ── */}
+      {/* Decision filter */}
       <div style={{ display:"flex", gap:8, padding:"10px 16px 14px", overflowX:"auto", scrollbarWidth:"none" }}>
         {[{ value:"All", label:"All items", emoji:"👗" }, ...DECISIONS].map(d => {
           const active = filterDecision === d.value;
@@ -520,7 +566,7 @@ export default function App() {
         })}
       </div>
 
-      {/* ── Result count ── */}
+      {/* Count */}
       <div style={{ padding:"0 16px 12px", fontSize:13, color:"#a09080", fontWeight:500 }}>
         {search || filterMember !== "All" || filterDecision !== "All"
           ? `${filtered.length} of ${items.length} item${items.length!==1?"s":""}`
@@ -528,7 +574,7 @@ export default function App() {
         }
       </div>
 
-      {/* ── Grid ── */}
+      {/* Grid */}
       <div style={{ padding:"0 16px", display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
         {filtered.length === 0 ? (
           <div style={{ gridColumn:"1/-1", textAlign:"center", padding:"60px 20px", color:"#c0a878" }}>
@@ -550,7 +596,7 @@ export default function App() {
         ))}
       </div>
 
-      {/* ── Floating Add Button ── */}
+      {/* Floating Add Button */}
       <div style={{ position:"fixed", bottom:28, left:"50%", transform:"translateX(-50%)", zIndex:100 }}>
         <button onClick={() => setShowAdd(true)} style={{
           background:"#2a1a0a", color:"#fffdf8", border:"none",
@@ -562,10 +608,10 @@ export default function App() {
         </button>
       </div>
 
-      {/* ── Sheets ── */}
-      {showAdd && <AddSheet onClose={() => setShowAdd(false)} onSave={addItem} />}
+      {/* Sheets */}
+      {showAdd && <AddSheet onClose={() => setShowAdd(false)} onSave={handleAdd} />}
       {editItem && (
-        <EditSheet item={editItem} onClose={() => setEditItem(null)} onUpdate={updateItem} onDelete={deleteItem} />
+        <EditSheet item={editItem} onClose={() => setEditItem(null)} onUpdate={handleUpdate} onDelete={handleDelete} />
       )}
     </div>
   );
