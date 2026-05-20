@@ -258,16 +258,16 @@ function AddSheet({ onClose, onSave }) {
       const b64 = e.target.result.split(",")[1];
       setLoading(true);
       try {
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method:"POST", headers:{ "Content-Type":"application/json" },
-          body: JSON.stringify({
-            model:"claude-sonnet-4-20250514", max_tokens:300,
-            messages:[{ role:"user", content:[
-              { type:"image", source:{ type:"base64", media_type:"image/jpeg", data:b64 } },
-              { type:"text",  text:`Analyse this clothing photo. Return ONLY a JSON object with: type (one of: ${CLOTHING_TYPES.join(", ")}), colour (simple colour name), make (brand if visible else empty string), suggestedSize (if readable else empty string). No markdown, no explanation, just JSON.` }
-            ]}]
-          })
-        });
+        const res = await fetch("/api/analyse", {
+  method:"POST", headers:{ "Content-Type":"application/json" },
+  body: JSON.stringify({
+    model:"claude-sonnet-4-20250514", max_tokens:300,
+    messages:[{ role:"user", content:[
+      { type:"image", source:{ type:"base64", media_type:"image/jpeg", data:b64 } },
+      { type:"text",  text:`Analyse this clothing photo. Return ONLY a JSON object with: type (one of: ${CLOTHING_TYPES.join(", ")}), colour (simple colour name), make (brand if visible else empty string), suggestedSize (if readable else empty string). No markdown, no explanation, just JSON.` }
+    ]}]
+  })
+});
         const data = await res.json();
         const text = data.content?.map(b=>b.text||"").join("") || "";
         const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
