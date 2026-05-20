@@ -203,7 +203,7 @@ function TagForm({ tags, setTags, imageUrl, loading, onSave, saveLabel, saving, 
 
       {imageUrl && (
         <div style={{ borderRadius:16, overflow:"hidden", marginBottom:20, height:200, position:"relative" }}>
-          <img src={imageUrl} alt="Upload" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+          <img src={imageUrl} alt="Upload" style={{ width:"100%", height:"100%", objectFit:"contain" }} />
           {loading && (
             <div style={{ position:"absolute", inset:0, background:"rgba(255,253,248,0.88)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}>
               <div style={{ width:36, height:36, border:"3px solid #e0d0b8", borderTopColor:"#8a6840", borderRadius:"50%", animation:"spin 0.8s linear infinite" }} />
