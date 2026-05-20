@@ -70,7 +70,24 @@ async function fetchItems() {
   }));
 }
 
-async function insertItem(item) {
+async function uploadImage(file) {
+  const ext = file.name.split(".").pop() || "jpg";
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const { data, error } = await supabase.storage
+    .from("clothing-images")
+    .upload(filename, file, { contentType: file.type });
+  if (error) { console.error("Upload error:", error); return null; }
+  const { data: urlData } = supabase.storage
+    .from("clothing-images")
+    .getPublicUrl(filename);
+  return urlData.publicUrl;
+}
+
+async function insertItem(item, imageFile) {
+  let imageUrl = null;
+  if (imageFile) {
+    imageUrl = await uploadImage(imageFile);
+  }
   const { data, error } = await supabase
     .from("items")
     .insert([{
@@ -81,12 +98,12 @@ async function insertItem(item) {
       size:      item.size,
       decision:  item.decision,
       note:      item.note,
-      image_url: item.imageUrl?.startsWith("blob:") ? null : item.imageUrl,
+      image_url: imageUrl,
     }])
     .select()
     .single();
   if (error) { console.error("Insert error:", error); return null; }
-  return { ...item, id: data.id };
+  return { ...item, id: data.id, imageUrl };
 }
 
 async function updateItem(item) {
@@ -282,10 +299,11 @@ function AddSheet({ onClose, onSave }) {
   const [loading, setLoading]   = useState(false);
   const [saving, setSaving]     = useState(false);
   const [tags, setTags]         = useState({ member:"Mum", type:"", colour:"", make:"", size:"", decision:"undecided", note:"" });
-
+  const [imageFile, setImageFile] = useState(null);
   const processFile = (file) => {
     if (!file) return;
     setImageUrl(URL.createObjectURL(file));
+    setImageFile(file);
     setStep("tagging");
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -314,7 +332,7 @@ function AddSheet({ onClose, onSave }) {
 
   const handleSave = async () => {
     setSaving(true);
-    const saved = await insertItem({ imageUrl, ...tags });
+    const saved = await insertItem({ imageUrl, ...tags }, imageFile);
     if (saved) onSave(saved);
     setSaving(false);
     onClose();
